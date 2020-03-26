@@ -2,13 +2,14 @@
 
 #include <cmath>
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>  // IWYU pragma: keep
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 constexpr static auto pi = static_cast<f32>(M_PI);
@@ -39,24 +40,59 @@ struct camera {
   }
 };
 
-struct rgb {
-  f32 r, g, b;
-};
+using rgb = vector;
 
 namespace color {
-inline constexpr static auto max    = 255;
-inline constexpr static rgb  orange = { 0.8, 0.5, 0.1 };
-inline constexpr static rgb  blue   = { 0.1, 0.2, 1 };
-inline constexpr static rgb  black  = { 0, 0, 0 };
+constexpr auto max    = 255;
+constexpr rgb  orange = { 0.8, 0.5, 0.1 };
+constexpr rgb  blue   = { 0.1, 0.2, 1 };
+constexpr rgb  black  = { 0, 0, 0 };
+auto           mix(const rgb& a, const rgb& b, const f32& strength) -> rgb {
+  return a * (1 - strength) + b * strength;
+}
 };  // namespace color
 
 struct shape {
   vector center;
   rgb    color;
+
+  shape(vector center, rgb color) : center(center), color(color) {
+  }
+
+  [[nodiscard]] virtual auto intersect(const ray& ray) const noexcept
+      -> std::optional<f32> = 0;
+  [[nodiscard]] virtual auto bounce(const vector& phit, vector& nhit) const
+      noexcept -> std::pair<f32, f32> = 0;
 };
 
-struct sphere : shape {
-  u32 radius;
+struct sphere : virtual shape {
+  f32 radius;
+  f32 r2;
+  sphere(vector center, rgb color, f32 radius)
+      : shape{ center, color }, radius(radius), r2(radius * radius) {
+  }
+
+  [[nodiscard]] auto intersect(const ray& ray) const noexcept
+      -> std::optional<f32> override {
+    auto r2  = radius * radius;
+    auto l   = center - ray.pos;
+    auto tca = l * ray.dir;
+    if (tca < 0) return std::nullopt;
+    auto d2 = l * l - tca * tca;
+    if (d2 > r2) return std::nullopt;
+    auto thc = std::sqrt(r2 - d2);
+    return tca - thc;
+    // todo add more stuff
+  }
+
+  [[nodiscard]] auto bounce(const vector& phit, vector& nhit) const noexcept
+      -> std::pair<f32, f32> override {
+    nhit = (phit - center).normalize();
+    return {
+      (1 + std::atan2(nhit.z, nhit.x) / pi) * 0.5,
+      acosf(nhit.y) / pi,
+    };
+  }
 };
 
 struct scene {
@@ -70,28 +106,33 @@ struct bitmap {
   std::vector<rgb> pixels;
 };
 
-auto intersect(const ray& ray, const sphere& sphere)
-    -> std::optional<std::pair<f32, f32>> {
-  auto r2  = sphere.radius * sphere.radius;
-  auto l   = sphere.center - ray.pos;
-  auto tca = l * ray.dir;
-  if (tca < 0) return std::nullopt;
-  auto d2 = l * l - tca * tca;
-  if (d2 > r2) return std::nullopt;
-  auto thc = std::sqrt(r2 - d2);
-  return std::pair{ tca - thc, tca + thc };
-}
 
 auto render(const scene& s) -> bitmap {
   std::vector<rgb> image(s.width * s.height, color::black);
+  const auto  infinity = std::numeric_limits<f32>::numeric_limits::infinity();
+  const auto& objs     = s.objects;
   for (auto i = 0; i < s.height; i++) {
     for (auto j = 0; j < s.width; j++) {
-      auto ray = s.view.ray(i, j);
-      for (const auto& object: s.objects) {
-        auto opt = intersect(ray, object);
-        if (opt.has_value()) {
-          image[i * s.width + j] = object.color;
+      auto ray      = s.view.ray(i, j);
+      auto hit      = &objs[0];
+      auto distance = infinity;
+      for (const auto& object: objs) {
+        auto opt = object.intersect(ray);
+        if (opt && *opt < distance) {
+          hit      = &object;
+          distance = *opt;
         }
+      }
+      if (distance != infinity) {
+        auto   phit = ray.pos + ray.dir * distance;
+        vector normal;  // nhit
+        auto [x, y]  = hit->bounce(phit, normal);
+        auto scale   = 4.0F;
+        auto pattern = static_cast<f32>((std::fmodf(x * scale, 1) > 0.5)
+                                        ^ (fmodf(y * scale, 1) > 0.5));
+        image[i * s.width + j] =
+            color::mix(hit->color, hit->color * 0.8F, pattern)
+            * std::max(0.f, -ray.dir * normal);
       }
     }
   }
@@ -102,21 +143,20 @@ auto load(std::string_view /* path */) -> scene {
   return { 1920,
            1080,
            {
-               sphere{ shape{ { 0, 0, -70 }, color::orange }, 500 },
-               sphere{ shape{ { 400, 0, -200 }, color::orange }, 30 },
+               sphere{ { 0, 0, -70 }, color::orange, 500 },
+               sphere{ { 400, 0, -200 }, color::orange, 30 },
            },
            options{ 1920, 1080 } };
 }
 
 auto load(options opts) -> scene {
-  u32 w = 1920;
-  u32 h = 1080;
   return {
-    w,
-    h,
+    opts.width,
+    opts.height,
     {
-        sphere{ shape{ { 0, 0, -70 }, color::orange }, 10 },
-        sphere{ shape{ { 50, 40, -200 }, color::blue }, 5 },
+        sphere{ { 0, 0, -70 }, color::orange, 10 },
+        sphere{ { 50, 40, -200 }, color::blue, 5 },
+        sphere{ { -5, -5, -40 }, color::blue, 3 },
     },
     opts,
   };
@@ -148,15 +188,21 @@ int main(int argc, char** argv) {  // NOLINT
     path = argv[1];
   }
 
-  auto scene = load({ 1920, 1080 });
+  bitmap img;
+  auto   scene = load({ 1920, 1080 });
+
+  constexpr auto iterations = 1; //50;
 
   std::cout << "Rendering...\n";
-  auto a   = chrono::steady_clock::now();
-  auto img = render(scene);
-  auto b   = chrono::steady_clock::now();
+  auto a = chrono::steady_clock::now();
+  for (int i = 0; i < iterations; i++) {
+    img = render(scene);
+  }
+  auto b = chrono::steady_clock::now();
   std::cout << "Finished raytracing\n"
             << "Elapsed time: "
             << chrono::duration_cast<chrono::milliseconds>(b - a).count()
+                   / iterations
             << "ms\n";
 
   std::ofstream output{ "scene.ppm", std::ios::binary };

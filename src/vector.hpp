@@ -17,11 +17,6 @@ struct vector {
   auto operator+(vector rhs) const -> vector;
   auto operator-(vector rhs) const -> vector;
 
-  auto operator*(type rhs) const -> vector;
-  auto operator+(type rhs) const -> vector;
-  auto operator-(type rhs) const -> vector;
-  auto operator/(type rhs) const -> vector;
-
   auto operator*=(type rhs) -> vector&;
   auto operator+=(type rhs) -> vector&;
   auto operator-=(type rhs) -> vector&;
@@ -32,11 +27,23 @@ struct vector {
 
   auto magnitude() -> type;
   auto normalize() -> vector&;
+
+  auto operator-() -> vector;
 };
 
 namespace position {
-constexpr inline vector origo = { 0, 0, 0 };
+constexpr vector origo = { 0, 0, 0 };
 };
 
+
+auto operator*(vector lhs, vector::type rhs) -> vector;
+auto operator+(vector lhs, vector::type rhs) -> vector;
+auto operator-(vector lhs, vector::type rhs) -> vector;
+auto operator/(vector lhs, vector::type rhs) -> vector;
+
+auto operator*(vector::type lhs, vector rhs) -> vector;
+auto operator+(vector::type lhs, vector rhs) -> vector;
+auto operator-(vector::type lhs, vector rhs) -> vector;
+auto operator/(vector::type lhs, vector rhs) -> vector;
 
 auto intersect(const vector& a, const vector& b) -> bool;

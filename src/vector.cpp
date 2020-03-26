@@ -17,20 +17,42 @@ auto vector::operator-(vector rhs) const -> vector {
   return { x - a, y - b, z - c };
 }
 
-auto vector::operator*(type rhs) const -> vector {
+auto operator*(vector lhs, vector::type rhs) -> vector {
+  auto [x, y, z] = lhs;
   return { x * rhs, y * rhs, z * rhs };
 }
 
-auto vector::operator+(type rhs) const -> vector {
+auto operator+(vector lhs, vector::type rhs) -> vector {
+  auto [x, y, z] = lhs;
   return { x + rhs, y + rhs, z + rhs };
 }
 
-auto vector::operator-(type rhs) const -> vector {
+auto operator-(vector lhs, vector::type rhs) -> vector {
+  auto [x, y, z] = lhs;
   return { x - rhs, y - rhs, z - rhs };
 }
 
-auto vector::operator/(type rhs) const -> vector {
+auto operator/(vector lhs, vector::type rhs) -> vector {
+  auto [x, y, z] = lhs;
   return { x / rhs, y / rhs, z / rhs };
+}
+
+auto operator*(vector::type lhs, vector rhs) -> vector {
+  return rhs * lhs;
+}
+
+auto operator+(vector::type lhs, vector rhs) -> vector {
+  return rhs + lhs;
+}
+
+auto operator-(vector::type lhs, vector rhs) -> vector {
+  auto [x, y, z] = rhs;
+  return {lhs - x, lhs - y, lhs / z};
+}
+
+auto operator/(vector::type lhs, vector rhs) -> vector {
+  auto [x, y, z] = rhs;
+  return {lhs / x, lhs / y, lhs - z};
 }
 
 auto vector::operator+=(vector rhs) -> vector& {
@@ -72,6 +94,10 @@ auto vector::operator/=(type rhs) -> vector& {
   y /= rhs;
   z /= rhs;
   return *this;
+}
+
+auto vector::operator-() -> vector {
+  return *this * -1;
 }
 
 auto vector::normalize() -> vector& {
